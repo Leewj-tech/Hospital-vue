@@ -122,14 +122,125 @@ export default {
         };
     },
     methods: {
-        
+        loadDeptAndSub: function() {
+            let that = this;
+            that.$http('/medical/dept/searchDeptAndSub', 'GET', {}, false, function(resp) {
+                let result = resp.result;
+                let dept = [];
+                for (let one in result) {
+                    let array = [];
+                    for (let sub of result[one]) {
+                        array.push({
+                            value: sub.subId,
+                            label: sub.subName
+                        });
+                    }
+                    dept.push({
+                        value: one,
+                        label: one,
+                        children: array
+                    });
+                }
+                that.dept = dept;
+            });
+        },
+		//当我们选中二级列表控件的时候，需要把选中的诊室ID保存在模型层中，所以需要声明回调函数
+		deptSubChangeHandle: function(val) {
+		    if (val != null) {
+		        this.dataForm.deptSubId = val[1];
+		    } else {
+		        this.dataForm.deptSubId = null;
+		    }
+		},
+		loadDataList: function() {
+		    let that = this;
+		    let data = {
+		        date: that.dataForm.date,
+		        deptSubId: that.dataForm.deptSubId
+		    };
+		    that.$http('/doctor/work_plan/schedule/searchDeptSubSchedule', 'POST', data, true, function(resp) {
+		        let result = resp.result;
+		        that.doctors = result;
+		    });
+		},
+		searchHandle: function() {
+		    let that = this;
+		    if (that.dataForm.deptSubId == 'NAN' || that.dataForm.date == 'NAN'
+		        ||that.dataForm.deptSubId == null || that.dataForm.date == null) {
+		        return;
+		    }
+		
+		    that.$refs['dataForm'].validate(valid => {
+		        if (valid) {
+		            that.$refs['dataForm'].clearValidate();
+		            that.loadDataList();
+		        } else {
+		            return false;
+		        }
+		    });
+		},
+		addHandle: function() {
+		    this.$nextTick(() => {
+		        //因为是添加新出诊计划，不需要向弹窗页面传递workPlanId去查找已有的出诊计划
+		        this.$refs.addOrUpdate.init(null, this.dataForm.deptSubId, this.dataForm.date);
+		    });
+		},
+		updateHandle: function(workPlanId) {
+		    this.$nextTick(() => {
+		        this.$refs.addOrUpdate.init(workPlanId, this.dataForm.deptSubId, this.dataForm.date);
+		    });
+		},
+		deleteHandle: function(workPlanId) {
+		    let that = this;
+		    that.$confirm('是否删除该条出诊日程?', '提示', {
+		        confirmButtonText: '确定',
+		        cancelButtonText: '取消',
+		        type: 'warning'
+		    }).then(() => {
+		        let data = {
+		            workPlanId: workPlanId
+		        };
+		        that.$http('/medical/dept/sub/work_plan/deleteWorkPlan', 'POST', data, true, function(resp) {
+		            ElMessage({
+		                message: '删除成功',
+		                type: 'success',
+		                duration: 1200
+		            });
+		            that.searchHandle();
+		        });
+		    });
+		}
+		
     },
     mounted: function() {
         
     },
+	//接受路由参数，并且完成二级列表控件初始化
     created: function() {
-       
+        let that = this;
+        //加载二级列表
+        that.loadDeptAndSub();
+    
+        let deptName = that.$route.params.deptName;
+        let deptSubId = Number(that.$route.params.deptSubId);
+        let date = that.$route.params.date;
+    
+        //设置二级列表控件选中的科室和诊室
+        that.dataForm.deptSub = [deptName, deptSubId];
+    
+        //如果是从页面左侧导航进入的schedule页面，传入的三个参数都为NAN，把变量设置成null
+        if (deptName == 'NAN' || deptSubId == 'NAN' || date == 'NAN') {
+            that.dataForm.deptName = null;
+            that.dataForm.deptSubId = null;
+            that.dataForm.date = null;
+            return;
+        }
+        that.dataForm.deptName = deptName;
+        that.dataForm.deptSubId = deptSubId;
+        that.dataForm.date = date;
+        that.loadDataList();
     }
+
 };
 </script>
 

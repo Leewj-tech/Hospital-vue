@@ -60,6 +60,7 @@
 <script>
 import dayjs from 'dayjs';
 import { ElMessage } from 'element-plus';
+//import { el } from 'element-plus/es/locale';
 export default {
 	data: function() {
 		return {
@@ -110,7 +111,113 @@ export default {
 		};
 	},
 	methods: {
+		loadDeptAndSub: function() {
+		    let that = this;
+		    that.$http('/medical/dept/searchDeptAndSub', 'GET', {}, false, function(resp) {
+		        let result = resp.result;
+		        let dept = [];
+		        for (let one in result) {
+		            let array = [];
+		            for (let sub of result[one]) {
+		                array.push({
+		                    value: sub.subId,
+		                    label: sub.subName
+		                });
+		            }
+		            dept.push({
+		                value: one,
+		                label: one,
+		                children: array
+		            });
+		        }
+		        that.dept = dept;
+		    });
+		},
+		reset: function() {
+		    this.checkAll = false; //全选框默认不选中
+		    this.checkedSlot = []; //每个时间段取消选中
+		    let dataForm = {
+		        deptSub: null,
+		        deptSubId: null,
+		        doctorId: null,
+		        date: new dayjs().format('YYYY-MM-DD'),
+		        slots: [],
+		        slotMaximum: 3
+		    };
+		    this.dataForm = dataForm;
+		},
+		init: function() {
+		    let that = this;
+		    that.reset();
+		    that.visible = true;
+		    that.$nextTick(() => {
+		        that.$refs['dataForm'].resetFields();
+		        that.loadDeptAndSub();
+		    });
+		},
+		deptSubChangeHandle: function(e) {
+		    let that = this;
+		    that.dataForm.deptSubId = e[1];
+		    let data = {
+		        deptSubId: that.dataForm.deptSubId
+		    };
 		
+		    that.$http('/doctor/searchByDeptSubId', 'POST', data, false, function(resp) {
+		        that.doctorList = resp.result;
+		        that.dataForm.doctorId = null;
+		    });
+		},
+		checkAllChangeHandle: function(val) {
+		    this.checkedSlot = val ? this.slotList : [];
+		},
+		dataFormSubmit: function() {
+			let that = this;
+			that.$refs['dataForm'].validate(valid => {
+				if(valid) {
+					//复选框前端验证
+					if(that.checkedSlot.length == 0) {
+						ElMessage({
+							message:"出诊时间段没有选择",
+							type:'warning'
+						});
+						return;
+					}
+					
+					//清空slots数组
+					that.dataForm.slots.length = 0;
+					//取出每个选中的时间段文字
+					for (let one of that.checkedSlot) {
+					//计算该时间段对应的编号
+						let index = that.slotList.indexOf(one) + 1;
+						that.dataForm.slots.push(index);
+					}
+					let data = {
+						deptSubId: that.dataForm.deptSubId,
+						doctorId: that.dataForm.doctorId,
+						date: that.dataForm.date,
+						slotMaximum: that.dataForm.slotMaximum,
+						totalMaximum: that.checkedSlot.length * that.dataForm.slotMaximum,
+						slots: that.dataForm.slots
+					};
+					that.$http('/medical/dept/sub/work_plan/insert','POST',data,true,function(resp){
+						let result = resp.result;
+						if (result == '') {
+							ElMessage({
+								message: '操作成功',
+								type: 'success'
+							});
+							that.visible = false;
+							that.$emit('refreshDataList');
+						} else {
+							ElMessage({
+								message: result,
+								type: 'warning'
+							});
+						}
+					});
+				}
+			});
+		}
 	}
 };
 </script>

@@ -48,6 +48,7 @@
 <script>
 import dayjs from 'dayjs';
 import { ElMessage } from 'element-plus';
+//import { el } from 'element-plus/es/locale';
 export default {
     data: function() {
         return {
@@ -92,7 +93,181 @@ export default {
         };
     },
     methods: {
-        
+		//弹出新增计划页面的时候加载该诊室下的医生数据
+        loadDoctorList: function() {
+            let that = this;
+            let data = {
+                deptSubId: that.dataForm.deptSubId
+            };
+            that.$http('/doctor/searchByDeptSubId', 'POST', data, true, function(resp) {
+                that.doctorList = resp.result;
+            });
+        },
+		reset: function() {
+		    this.checkAll = false;
+		    this.checkedSlot = [];
+		    this.oldSlots = [];
+		    let dataForm = {
+		        deptSubId: null,
+		        doctorId: null,
+		        date: new dayjs().format('YYYY-MM-DD'),
+		        slots: [],
+		        slotMaximum: 3
+		    };
+		    this.dataForm = dataForm;
+		},
+		init: function(workPlanId, deptSubId, date) {
+			 let that = this;
+			 that.reset();
+			 that.dataForm.workPlanId = workPlanId;
+			 that.dataForm.deptSubId = deptSubId;
+			 that.dataForm.date = date;
+			 that.visible = true;
+			 that.$nextTick(() => {
+				 that.$refs['dataForm'].resetFields();
+				 that.loadDoctorList();
+				 if (workPlanId != null) {
+					 //这里是新添加的代码
+					 let data = {
+						 workPlanId: workPlanId
+					 };
+					 that.$http('/doctor/work_plan/schedule/searchByWorkPlanId', 'POST', data, true, function(resp) {
+						 let result = resp.result;
+						 that.dataForm.doctorId = result.doctorId;
+						 that.dataForm.slotMaximum = result.maximum;
+						 that.oldSlots = result.slots;
+						 for (let one of result.slots) {
+							 let slot = that.slotList[one.slot - 1];
+							 that.checkedSlot.push(slot);
+						 }
+					 });
+				 }
+			 });
+		},
+		checkAllChangeHandle: function(val) {
+		    this.checkedSlot = val ? this.slotList : [];
+		},
+		analyseCheckBoxDisable: function(slot) {
+		},
+		dataFormSubmit: function() {
+		    let that = this;
+		    that.$refs['dataForm'].validate(function(valid) {
+		        if (valid) {
+		            if (that.checkedSlot.length == 0) {
+		                ElMessage({
+		                    message: '出诊时间段没有选择',
+		                    type: 'warning'
+		                });
+		                return;
+		            }
+		            //新增数据
+		            if (that.dataForm.workPlanId == null) {
+		                //把选中的时段转换成具体编号
+		                that.dataForm.slots.length = 0;
+		                for (let one of that.checkedSlot) {
+		                    let index = that.slotList.indexOf(one) + 1;
+		                    that.dataForm.slots.push(index);
+		                }
+		                let data = {
+		                    deptSubId: that.dataForm.deptSubId,
+		                    doctorId: that.dataForm.doctorId,
+		                    date: that.dataForm.date,
+		                    slotMaximum: that.dataForm.slotMaximum,
+		                    totalMaximum: that.checkedSlot.length * that.dataForm.slotMaximum,
+		                    slots: that.dataForm.slots
+		                };
+		                that.$http('/medical/dept/sub/work_plan/insert', 'POST', data, true, function(resp) {
+		                    let result = resp.result;
+		                    if (result == '') {
+		                        ElMessage({
+		                            message: '操作成功',
+		                            type: 'success',
+		                            duration: 1200
+		                        });
+		                        that.visible = false;
+		                        that.$emit('refreshDataList');
+		                    } else {
+		                        ElMessage({
+		                            message: result,
+		                            type: 'warning',
+		                            duration: 1200
+		                        });
+		                    }
+		                });
+		            }
+		            //TODO 修改数据
+					else {
+						that.dataForm.slots.length = 0;
+						//把选中的时间段转化成编号
+						for(let one of that.checkedSlot) {
+							let index = that.slotList.indexOf(one) + 1;
+							that.dateForm.slots.push(index);
+						}
+						let array = [];
+						//用新的时间段和老的时间段比较，哪些时段是新增的选中时段
+						for(let one of that.dataForm.slots) {
+							let temp = that.oldSlots.find(function(old) {
+								return old.slot == one;
+							});
+							//判断是不是新增的时间段
+							if(typeof temp  == 'undefined') {
+								array.push({
+									scheduleId:old.scheduleId,
+									slot:old.slot,
+									maximum:that.dataForm.slotMaximum,
+									operate:'insert'
+								});
+							} 
+						}
+						//用老的时段与新的时段比较，哪些时段是要删除的
+						for(let old of that.oldSlots) {
+							let temp = that.dataForm.slots.find(function(one) {
+								return old.slot == one;
+							});
+							//判断是不是删除字段
+							if(typeof temp  == 'undefined') {
+								array.push({
+									scheduleId:old.scheduleId,
+									slot:old.slot,
+									maximum:that.dataForm.slotMaximum,
+									operate:'delete'
+								});
+							} 
+						}
+						//如果既没有新增也无修改，弹窗提示没必要修改
+						if(array.length == 0) {
+							ElMessage({
+								message:'请改动出诊日程',
+								type:"warning",
+								duration:1200
+							});
+							return;
+						}
+						let data = {
+							workPlanId: that.dataForm.workPlanId,
+							maximum: that.checkedSlot.length * that.dataForm.slotMaximum,
+							slots: array
+						};
+						that.$http('/doctor/work_plan/schedule/updateSchedule','POST',data,true,function(resp) {
+							ElMessage({
+								message:"操作成功",
+								type:'success'
+							});
+							that.visible = false;
+							that.$emit('refreshDataList');
+						});
+					}
+		        }
+		    });
+		},
+		analyseCheckBoxDisable: function(slot) {
+		    let temp = this.oldSlots.find(function(one) {
+		        //筛选某个时段的实际挂号患者数量是否大于0
+		        return one.slot == slot && one.num > 0;
+		    });
+		    //禁用患者挂号数量大于0的时间段复选框
+		    return typeof temp != 'undefined';
+		},
     }
 };
 </script>
